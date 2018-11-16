@@ -1,8 +1,20 @@
+// Таймер с прерываниями
+// https://github.com/sadr0b0t/arduino-timer-api
 #include <timer-api.h>
-#include <TM1637Display.h> // 4-digit module
-#include <DS1302.h> // RTC
-#include <SimpleDHT.h> // DHT11
-#include <EEPROM.h> // EEPROM for settings
+
+// Циферки
+// https://github.com/avishorp/TM1637
+#include <TM1637Display.h>
+
+// RTC
+// https://github.com/msparks/arduino-ds1302
+#include <DS1302.h>
+
+// DHT11
+#include <SimpleDHT.h>
+
+// EEPROM для настроек
+#include <EEPROM.h>
 
 //////////
 // Ноги //
