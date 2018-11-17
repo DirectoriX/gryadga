@@ -20,24 +20,24 @@
 // Ноги //
 //////////
 
-// Цифровой модуль
-const int CLK = 2;
-const int DIO = 3;
-TM1637Display display(CLK, DIO);
-
 // Регистр сдвига
-const int shiftLatch = 4; // ST_CP - зелёный
-const int shiftClock = 5; // SH_CP - жёлтый
-const int shiftData = 6; // DS - синий
-
-// Часы
-const int kCePin = 7; // Chip Enable / RST
-const int kIoPin = 8; // Input/Output / DAT
-const int kSclkPin = 9; // Serial Clock / CLK
-DS1302 rtc(kCePin, kIoPin, kSclkPin);
+const int shiftLatch = 2; // ST_CP - зелёный
+const int shiftClock = 3; // SH_CP - жёлтый
+const int shiftData = 4; // DS - синий
 
 // ШИМ для показа яркости лент
-const int stripPWM = 10;
+const int stripPWM = 5;
+
+// Цифровой модуль
+const int CLK = 6;
+const int DIO = 7;
+TM1637Display display(CLK, DIO);
+
+// Часы
+const int kCePin = 8; // Chip Enable / RST
+const int kIoPin = 9; // Input/Output / DAT
+const int kSclkPin = 10; // Serial Clock / CLK
+DS1302 rtc(kCePin, kIoPin, kSclkPin);
 
 // DHT11
 int pinDHT11 = 11;
@@ -52,6 +52,7 @@ const int valve = A0;
 // Фоновый свет
 const int backlight = A1;
 
+const int minWater = 90;
 
 // Выходы сдвигового регистра, по номерам контактов
 // 12345678
@@ -71,22 +72,20 @@ int power[24];
 
 // Флаги обновления
 volatile bool needUpdate = true;
-volatile bool checkMoisture = true;
-volatile bool watering = false;
-volatile bool stopCheckMoisture = false;
-volatile bool startWatering = false;
 volatile bool nextState = false;
 
 // Блок настроек
-int beginHour = 6;
-int lightTime = 15;
-int backLevel = 3;
-int minMoisture = 50;
-int waterTime = 200;
+int beginHour = 6; // Час начала освещения
+int lightTime = 15; // Общая длительность освещения
+int backLevel = 3; // Кол-во лент, при котором включён фоновый свет
+int minMoisture = 50; // Влажность, ниже которой включается полив
+int waterTime = 1; // Длительность полива в десятках секунд
 
 // Вспомогательные данные
 bool showColon = true;
 bool sensorRead = false;
+bool checkMoisture = true;
+bool watering = false;
 int hour = 0;
 int minute = 0;
 int second = 0;
@@ -96,11 +95,13 @@ int moisture = 0;
 int water = 0;
 uint8_t data[] = { 0xff, 0xff, 0x00, 0xff };
 int state = 0;
+int moistureCount = 0;
+int waterCount = 0;
 
 // Обработчик прерывания таймера
 void timer_handle_interrupts(int timer)
 {
-  // Считать будем 500 срабатываний - 0,5 секунды
+  // Считать будем по 500 срабатываний - 0,5 секунды
   static int count = 500;
 
   if (count == 0)
@@ -112,55 +113,19 @@ void timer_handle_interrupts(int timer)
     {
       count--;
     }
-
-  // Для подсчёта времени игнорирования влажности почвы
-  static long moistureCount = 0;
-  // Для подсчёта времени полива
-  static long waterCount = 0;
-
-  if (startWatering)
-    {
-      waterCount = waterTime * 1000;
-      startWatering = false;
-      watering = true;
-    }
-
-  if (waterCount == 0)
-    {
-      watering = false;
-    }
-  else
-    {
-      waterCount--;
-    }
-
-  if (stopCheckMoisture)
-    {
-      moistureCount = waterTime * 1000 + 900000;
-      stopCheckMoisture = false;
-      checkMoisture = false;
-    }
-
-  if (moistureCount == 0)
-    {
-      checkMoisture = true;
-    }
-  else
-    {
-      moistureCount--;
-    }
 }
 
 void setup()
 {
-  timer_init_ISR_1KHz(TIMER_DEFAULT); // Включаем таймер на 1кГц
-  display.setBrightness(3); // Устанавливаем яркость
+  // Устанавливаем яркость
+  display.setBrightness(3);
   // Настраиваем ноги
   pinMode(shiftLatch, OUTPUT);
   pinMode(shiftClock, OUTPUT);
   pinMode(shiftData, OUTPUT);
   pinMode(stripPWM, OUTPUT);
   pinMode(buzzer, OUTPUT);
+  digitalWrite(buzzer, HIGH);
   pinMode(valve, OUTPUT);
   pinMode(backlight, OUTPUT);
   // Читаем настройки из EEPROM
@@ -172,9 +137,12 @@ void setup()
     {
       power[i] = (i < beginHour || i >= endHour) ? 0 : min(i - beginHour + 1, min(endHour - i, 4));
     }
+
+  // Включаем таймер на 1кГц
+  timer_init_ISR_1KHz(TIMER_DEFAULT);
 }
 
-void shiftWrite()
+void updateView()
 {
   byte shift = (power[hour] > 0) ? strip[power[hour] - 1][minute / 12] : 0;
 
@@ -189,18 +157,18 @@ void shiftWrite()
     }
 
   // Проверяем уровень воды
-  if (water <= 90)
+  if (water <= minWater)
     {
       bitSet(shift, 7);
     }
 
-  // Если поливаем - поливем и показываем
+  // Если поливаем - поливаем и показываем
   if (watering)
     {
       bitSet(shift, 5);
     }
 
-  digitalWrite(valve, watering ? HIGH : LOW);
+  digitalWrite(valve, !watering ? HIGH : LOW);
   // Пишем в регистр
   digitalWrite(shiftLatch, LOW);
   shiftOut(shiftData, shiftClock, LSBFIRST, shift);
@@ -218,8 +186,10 @@ void readSensor()
 
       if (moisture < minMoisture)
         {
-          startWatering = true;
-          stopCheckMoisture = true;
+          waterCount = waterTime * 10;
+          watering = true;
+          moistureCount = waterTime * 10 + 9;
+          checkMoisture = false;
         }
     }
 }
@@ -273,15 +243,48 @@ void loop()
         {
           case 0: // Показ времени и датчиков, основной
           {
+            if (showColon)
+              {
+                if (waterCount == 0)
+                  {
+                    watering = false;
+                  }
+                else
+                  {
+                    waterCount--;
+                  }
+
+                if (moistureCount == 0)
+                  {
+                    checkMoisture = true;
+                  }
+                else
+                  {
+                    moistureCount--;
+                  }
+              }
+
             // Получаем время
             Time t = rtc.time();
             hour = t.hr ;
             minute = t.min;
             second = t.sec;
+            hour = t.min % 24;
+            minute = t.sec;
             // Включаем нужные ленты и фоновый свет
             byte PWM = (power[hour] > 0) ? (power[hour] * 64 - 1) : 0;
             analogWrite(stripPWM, PWM);
-            shiftWrite();
+            updateView();
+
+            if (water <= minWater && showColon)
+              {
+                tone(buzzer, 500);
+              }
+            else
+              {
+                noTone(buzzer);
+                digitalWrite(buzzer, HIGH);
+              }
 
             // Надо ли считать показания датчиков?
             if (second == 0)
