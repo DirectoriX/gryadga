@@ -354,6 +354,24 @@ void waterTimeSetup()
   data[3] = SEG_D | SEG_E | SEG_F;
 }
 
+void backLevelSetup()
+{
+  data[1] = 0;
+
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(backLevel);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal);
+    }
+
+  data[2] = SEG_B | SEG_F;
+  data[3] = 0;
+}
+
 void loop()
 {
   if (needUpdate) // Если надо обновить
@@ -552,6 +570,15 @@ void loop()
 
           case 7: // Установка включения фонового света
           {
+            newVal = map(analogRead(res), 0, 1023, 1, 5);
+            backLevelSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                backLevel = newVal;
+              }
+
             break;
           }
 
@@ -570,3 +597,4 @@ void loop()
         }
     }
 }
+
