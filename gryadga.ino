@@ -52,6 +52,11 @@ const int valve = A0;
 // Фоновый свет
 const int backlight = A1;
 
+// Аналоговые входы для датчиков
+const int res = A5; // Крутилка
+const int wat = A6; // Уровень воды
+const int mois = A7; // Влажность почвы
+
 const int minWater = 90;
 
 // Выходы сдвигового регистра, по номерам контактов
@@ -73,6 +78,7 @@ byte power[24];
 // Флаги обновления
 volatile bool needUpdate = true;
 volatile bool nextState = false;
+volatile bool setNewVal = false;
 
 // Блок настроек
 byte beginHour = 6; // Час начала освещения
@@ -97,6 +103,7 @@ uint8_t data[] = { 0xff, 0xff, 0x00, 0xff };
 int state = 0;
 int moistureCount = 0;
 int waterCount = 0;
+byte newVal = 0;
 
 // Обработчик прерывания таймера
 void timer_handle_interrupts(int timer)
@@ -117,6 +124,9 @@ void timer_handle_interrupts(int timer)
 
 void setup()
 {
+  // Включаем часы с защитой от записи
+  rtc.writeProtect(true);
+  rtc.halt(false);
   // Устанавливаем яркость
   display.setBrightness(3);
   // Настраиваем ноги
@@ -188,11 +198,11 @@ void updateView()
 void readSensor()
 {
   dht11.read(&temperature, &humidity, NULL);
-  water = map(analogRead(A6), 200, 500, 0, 100);
+  water = map(analogRead(wat), 200, 500, 0, 100);
 
   if (checkMoisture)
     {
-      moisture = map(analogRead(A7), 0, 1023, 100, 0);
+      moisture = map(analogRead(mois), 0, 1023, 100, 0);
 
       if (moisture < minMoisture)
         {
@@ -234,6 +244,42 @@ void showLevel()
   data[1] = display.encodeDigit(water % 10);
   data[3] = SEG_D | SEG_E | SEG_F;
   display.setSegments(data);
+}
+
+void hourSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(hour / 10);
+      data[1] = display.encodeDigit(hour % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = display.encodeDigit(minute / 10);
+  data[3] = display.encodeDigit(minute % 10);
+}
+
+void minuteSetup()
+{
+  data[0] = display.encodeDigit(hour / 10);
+  data[1] = display.encodeDigit(hour % 10);
+
+  if (showColon)
+    {
+      data[1] |= 0x80; // Двоеточие = текущее значение
+      data[2] = display.encodeDigit(minute / 10);
+      data[3] = display.encodeDigit(minute % 10);
+    }
+  else
+    {
+      data[2] = display.encodeDigit(newVal / 10);
+      data[3] = display.encodeDigit(newVal % 10);
+    }
 }
 
 void loop()
@@ -279,8 +325,8 @@ void loop()
             hour = t.hr ;
             minute = t.min;
             second = t.sec;
-            hour = t.min % 24;
-            minute = t.sec;
+            hour = t.min % 24; // FIXME
+            minute = t.sec; // FIXME
             // Включаем нужные ленты и фоновый свет
             byte PWM = (power[hour] > 0) ? (power[hour] * 64 - 1) : 0;
             analogWrite(stripPWM, PWM);
@@ -345,11 +391,34 @@ void loop()
 
           case 1: // Установка часов
           {
+            newVal = map(analogRead(res), 0, 1023, 0, 23);
+            hourSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                hour = newVal;
+              }
+
             break;
           }
 
           case 2: // Установка минут
           {
+            newVal = map(analogRead(res), 0, 1023, 0, 59);
+            minuteSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                minute = newVal;
+              }
+
+            // А теперь сохраняем время в RTC
+            rtc.writeProtect(false);
+            Time t(2019, 1, 1, hour, minute, 0, Time::kTuesday);
+            rtc.time(t);
+            rtc.writeProtect(true);
             break;
           }
 
