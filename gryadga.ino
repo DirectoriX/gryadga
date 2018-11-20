@@ -56,6 +56,11 @@ const int valve = A0;
 // Фоновый свет
 const int backlight = A1;
 
+// Аналоговые входы для датчиков
+const int res = A5; // Крутилка
+const int wat = A6; // Уровень воды
+const int mois = A7; // Влажность почвы
+
 const int minWater = 90;
 
 // Выходы сдвигового регистра, по номерам контактов
@@ -72,18 +77,19 @@ const byte strip[][5] = {0b00010000, 0b00001000, 0b00000100, 0b00000010, 0b00000
                         };
 
 // Массив с яркостью освещения
-int power[24];
+byte power[24];
 
 // Флаги обновления
 volatile bool needUpdate = true;
 volatile bool nextState = false;
+volatile bool setNewVal = false;
 
 // Блок настроек
-int beginHour = 6; // Час начала освещения
-int lightTime = 15; // Общая длительность освещения
-int backLevel = 3; // Кол-во лент, при котором включён фоновый свет
-int minMoisture = 50; // Влажность, ниже которой включается полив
-int waterTime = 1; // Длительность полива в десятках секунд
+byte beginHour = 6; // Час начала освещения
+byte lightTime = 15; // Общая длительность освещения
+byte backLevel = 3; // Кол-во лент, при котором включён фоновый свет
+byte minMoisture = 50; // Влажность, ниже которой включается полив
+byte waterTime = 1; // Длительность полива в десятках секунд
 
 // Вспомогательные данные
 bool showColon = true;
@@ -101,6 +107,7 @@ uint8_t data[] = { 0xff, 0xff, 0x00, 0xff };
 int state = 0;
 int moistureCount = 0;
 int waterCount = 0;
+byte newVal = 0;
 
 // Обработчик прерывания таймера
 void timer_handle_interrupts(int timer)
@@ -176,8 +183,22 @@ void timer_handle_interrupts(int timer)
   lastBtnSetState = btnSetState;
 }
 
+void calcLight()
+{
+  // Считаем освещение
+  int endHour = beginHour + lightTime;
+
+  for (int i = 0; i < 24; i++)
+    {
+      power[i] = (i < beginHour || i >= endHour) ? 0 : min(i - beginHour + 1, min(endHour - i, 4));
+    }
+}
+
 void setup()
 {
+  // Включаем часы с защитой от записи
+  rtc.writeProtect(true);
+  rtc.halt(false);
   // Устанавливаем яркость
   display.setBrightness(3);
   // Настраиваем ноги
@@ -190,15 +211,18 @@ void setup()
   pinMode(valve, OUTPUT);
   pinMode(backlight, OUTPUT);
   // Читаем настройки из EEPROM
-  ////////////////////
-  // Считаем освещение
-  int endHour = beginHour + lightTime;
+  byte first = EEPROM.read(0);
 
-  for (int i = 0; i < 24; i++)
+  if (first == 0xda)
     {
-      power[i] = (i < beginHour || i >= endHour) ? 0 : min(i - beginHour + 1, min(endHour - i, 4));
+      beginHour = EEPROM.read(1);
+      lightTime = EEPROM.read(2);
+      backLevel = EEPROM.read(3);
+      minMoisture = EEPROM.read(4);
+      waterTime = EEPROM.read(5);
     }
 
+  calcLight();
   // Включаем таймер на 1кГц
   timer_init_ISR_1KHz(TIMER_DEFAULT);
 }
@@ -239,17 +263,17 @@ void updateView()
 void readSensor()
 {
   dht11.read(&temperature, &humidity, NULL);
-  water = map(analogRead(A6), 200, 500, 0, 100);
+  water = map(analogRead(wat), 200, 500, 0, 100);
 
   if (checkMoisture)
     {
-      moisture = map(analogRead(A7), 0, 1023, 100, 0);
+      moisture = map(analogRead(mois), 0, 1023, 100, 0);
 
       if (moisture < minMoisture)
         {
           waterCount = waterTime * 10;
           watering = true;
-          moistureCount = waterTime * 10 + 9;
+          moistureCount = waterTime * 10 + 9; // FIXME 900
           checkMoisture = false;
         }
     }
@@ -285,6 +309,132 @@ void showLevel()
   data[1] = display.encodeDigit(water % 10);
   data[3] = SEG_D | SEG_E | SEG_F;
   display.setSegments(data);
+}
+
+void hourSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(hour / 10);
+      data[1] = display.encodeDigit(hour % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = display.encodeDigit(minute / 10);
+  data[3] = display.encodeDigit(minute % 10);
+}
+
+void minuteSetup()
+{
+  data[0] = display.encodeDigit(hour / 10);
+  data[1] = display.encodeDigit(hour % 10);
+
+  if (showColon)
+    {
+      data[1] |= 0x80; // Двоеточие = текущее значение
+      data[2] = display.encodeDigit(minute / 10);
+      data[3] = display.encodeDigit(minute % 10);
+    }
+  else
+    {
+      data[2] = display.encodeDigit(newVal / 10);
+      data[3] = display.encodeDigit(newVal % 10);
+    }
+}
+
+void beginHourSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(beginHour / 10);
+      data[1] = display.encodeDigit(beginHour % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = SEG_A;
+  data[3] = SEG_A | SEG_C | SEG_D | SEG_F | SEG_G;
+}
+
+void lightTimeSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(lightTime / 10);
+      data[1] = display.encodeDigit(lightTime % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = SEG_A;
+  data[3] = SEG_D | SEG_E | SEG_F;
+}
+
+void minMoistureSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(minMoisture / 10);
+      data[1] = display.encodeDigit(minMoisture % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = SEG_C | SEG_D | SEG_E | SEG_G;
+  data[3] = SEG_A | SEG_C | SEG_D | SEG_F | SEG_G;
+}
+
+void waterTimeSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(waterTime / 10);
+      data[1] = display.encodeDigit(waterTime % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = SEG_C | SEG_D | SEG_E | SEG_G;
+  data[3] = SEG_D | SEG_E | SEG_F;
+}
+
+void backLevelSetup()
+{
+  data[1] = 0;
+
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(backLevel);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal);
+    }
+
+  data[2] = SEG_B | SEG_F;
+  data[3] = 0;
 }
 
 void loop()
@@ -330,8 +480,8 @@ void loop()
             hour = t.hr ;
             minute = t.min;
             second = t.sec;
-            hour = t.min % 24;
-            minute = t.sec;
+            hour = t.min % 24; // FIXME
+            minute = t.sec; // FIXME
             // Включаем нужные ленты и фоновый свет
             byte PWM = (power[hour] > 0) ? (power[hour] * 64 - 1) : 0;
             analogWrite(stripPWM, PWM);
@@ -396,41 +546,117 @@ void loop()
 
           case 1: // Установка часов
           {
+            newVal = map(analogRead(res), 0, 1023, 0, 23);
+            hourSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                hour = newVal;
+              }
+
             break;
           }
 
           case 2: // Установка минут
           {
+            newVal = map(analogRead(res), 0, 1023, 0, 59);
+            minuteSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                minute = newVal;
+              }
+
+            // А теперь сохраняем время в RTC
+            rtc.writeProtect(false);
+            Time t(2019, 1, 1, hour, minute, 0, Time::kTuesday);
+            rtc.time(t);
+            rtc.writeProtect(true);
             break;
           }
 
           case 3: // Установка начала освещения
           {
+            newVal = map(analogRead(res), 0, 1023, 0, 18);
+            beginHourSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                beginHour = newVal;
+              }
+
             break;
           }
 
           case 4: // Установка длительности освещения
           {
+            newVal = map(analogRead(res), 0, 1023, 6, 24 - beginHour);
+            lightTimeSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                lightTime = newVal;
+              }
+
             break;
           }
 
           case 5: // Установка влажности полива
           {
+            newVal = map(analogRead(res), 0, 1023, 0, 99);
+            minMoistureSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                minMoisture = newVal;
+              }
+
             break;
           }
 
           case 6: // Установка времени полива
           {
+            newVal = map(analogRead(res), 0, 1023, 1, 99);
+            waterTimeSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                waterTime = newVal;
+              }
+
             break;
           }
 
           case 7: // Установка включения фонового света
           {
+            newVal = map(analogRead(res), 0, 1023, 1, 5);
+            backLevelSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                backLevel = newVal;
+              }
+
             break;
           }
 
           case 8: // Сохранение настроек в EEPROM
           {
+            EEPROM.update(0, 0xda);
+            EEPROM.update(1, beginHour);
+            EEPROM.update(2, lightTime);
+            EEPROM.update(3, backLevel);
+            EEPROM.update(4, minMoisture);
+            EEPROM.update(5, waterTime);
+            data[2] = 0; // Сбрасываем 3-й сегмент
+            calcLight(); // Пересчитываем освещение
             state = 0; // После сохранения настроек переходим в основной режим
             break;
           }
