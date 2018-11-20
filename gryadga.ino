@@ -122,6 +122,17 @@ void timer_handle_interrupts(int timer)
     }
 }
 
+void calcLight()
+{
+  // Считаем освещение
+  int endHour = beginHour + lightTime;
+
+  for (int i = 0; i < 24; i++)
+    {
+      power[i] = (i < beginHour || i >= endHour) ? 0 : min(i - beginHour + 1, min(endHour - i, 4));
+    }
+}
+
 void setup()
 {
   // Включаем часы с защитой от записи
@@ -150,14 +161,7 @@ void setup()
       waterTime = EEPROM.read(5);
     }
 
-  // Считаем освещение
-  int endHour = beginHour + lightTime;
-
-  for (int i = 0; i < 24; i++)
-    {
-      power[i] = (i < beginHour || i >= endHour) ? 0 : min(i - beginHour + 1, min(endHour - i, 4));
-    }
-
+  calcLight();
   // Включаем таймер на 1кГц
   timer_init_ISR_1KHz(TIMER_DEFAULT);
 }
@@ -591,10 +595,10 @@ void loop()
             EEPROM.update(4, minMoisture);
             EEPROM.update(5, waterTime);
             data[2] = 0; // Сбрасываем 3-й сегмент
+            calcLight(); // Пересчитываем освещение
             state = 0; // После сохранения настроек переходим в основной режим
             break;
           }
         }
     }
 }
-
