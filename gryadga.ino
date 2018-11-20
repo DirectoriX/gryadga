@@ -20,6 +20,10 @@
 // Ноги //
 //////////
 
+// Кнопочки
+const int btnMode = 0; // Переключение режима настройки
+const int btnSet = 1; // Сохранение текущего параметра
+
 // Регистр сдвига
 const int shiftLatch = 2; // ST_CP - зелёный
 const int shiftClock = 3; // SH_CP - жёлтый
@@ -120,6 +124,63 @@ void timer_handle_interrupts(int timer)
     {
       count--;
     }
+
+  static int lastBtnModeState = HIGH;
+  static int currBtnModeState = HIGH;
+  int btnModeState = digitalRead(btnMode);
+  static int btnModeCount = 0;
+
+  if (btnModeState != lastBtnModeState)
+    {
+      btnModeCount = 50;
+    }
+
+  if (btnModeCount > 0)
+    {
+      btnModeCount--;
+    }
+  else
+    {
+      if (btnModeState != currBtnModeState)
+        {
+          currBtnModeState = btnModeState;
+
+          if (currBtnModeState == LOW)
+            {
+              // TODO
+            }
+        }
+    }
+
+  lastBtnModeState = btnModeState;
+  static int lastBtnSetState = HIGH;
+  static int currBtnSetState = HIGH;
+  int btnSetState = digitalRead(btnSet);
+  static int btnSetCount = 0;
+
+  if (btnSetState != lastBtnSetState)
+    {
+      btnSetCount = 50;
+    }
+
+  if (btnSetCount > 0)
+    {
+      btnSetCount--;
+    }
+  else
+    {
+      if (btnSetState != currBtnSetState)
+        {
+          currBtnSetState = btnSetState;
+
+          if (currBtnSetState == LOW)
+            {
+              // TODO
+            }
+        }
+    }
+
+  lastBtnSetState = btnSetState;
 }
 
 void calcLight()
