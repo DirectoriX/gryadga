@@ -282,6 +282,42 @@ void minuteSetup()
     }
 }
 
+void beginHourSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(beginHour / 10);
+      data[1] = display.encodeDigit(beginHour % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = SEG_A;
+  data[3] = SEG_A | SEG_C | SEG_D | SEG_F | SEG_G;
+}
+
+void lightTimeSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(lightTime / 10);
+      data[1] = display.encodeDigit(lightTime % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = SEG_A;
+  data[3] = SEG_D | SEG_E | SEG_F;
+}
+
 void loop()
 {
   if (needUpdate) // Если надо обновить
@@ -424,11 +460,29 @@ void loop()
 
           case 3: // Установка начала освещения
           {
+            newVal = map(analogRead(res), 0, 1023, 0, 18);
+            beginHourSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                beginHour = newVal;
+              }
+
             break;
           }
 
           case 4: // Установка длительности освещения
           {
+            newVal = map(analogRead(res), 0, 1023, 6, 24 - beginHour);
+            lightTimeSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                lightTime = newVal;
+              }
+
             break;
           }
 
@@ -455,6 +509,7 @@ void loop()
             EEPROM.update(3, backLevel);
             EEPROM.update(4, minMoisture);
             EEPROM.update(5, waterTime);
+            data[2] = 0; // Сбрасываем 3-й сегмент
             state = 0; // После сохранения настроек переходим в основной режим
             break;
           }
