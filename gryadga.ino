@@ -147,7 +147,7 @@ void timer_handle_interrupts(int timer)
 
           if (currBtnModeState == LOW)
             {
-              // TODO
+              nextState = true;
             }
         }
     }
@@ -175,7 +175,7 @@ void timer_handle_interrupts(int timer)
 
           if (currBtnSetState == LOW)
             {
-              // TODO
+              setNewVal = true;
             }
         }
     }
@@ -273,7 +273,7 @@ void readSensor()
         {
           waterCount = waterTime * 10;
           watering = true;
-          moistureCount = waterTime * 10 + 9; // FIXME 900
+          moistureCount = waterTime * 10 + 900;
           checkMoisture = false;
         }
     }
@@ -327,6 +327,7 @@ void hourSetup()
 
   data[2] = display.encodeDigit(minute / 10);
   data[3] = display.encodeDigit(minute % 10);
+  display.setSegments(data);
 }
 
 void minuteSetup()
@@ -345,6 +346,8 @@ void minuteSetup()
       data[2] = display.encodeDigit(newVal / 10);
       data[3] = display.encodeDigit(newVal % 10);
     }
+
+  display.setSegments(data);
 }
 
 void beginHourSetup()
@@ -363,6 +366,7 @@ void beginHourSetup()
 
   data[2] = SEG_A;
   data[3] = SEG_A | SEG_C | SEG_D | SEG_F | SEG_G;
+  display.setSegments(data);
 }
 
 void lightTimeSetup()
@@ -381,6 +385,7 @@ void lightTimeSetup()
 
   data[2] = SEG_A;
   data[3] = SEG_D | SEG_E | SEG_F;
+  display.setSegments(data);
 }
 
 void minMoistureSetup()
@@ -399,6 +404,7 @@ void minMoistureSetup()
 
   data[2] = SEG_C | SEG_D | SEG_E | SEG_G;
   data[3] = SEG_A | SEG_C | SEG_D | SEG_F | SEG_G;
+  display.setSegments(data);
 }
 
 void waterTimeSetup()
@@ -417,6 +423,7 @@ void waterTimeSetup()
 
   data[2] = SEG_C | SEG_D | SEG_E | SEG_G;
   data[3] = SEG_D | SEG_E | SEG_F;
+  display.setSegments(data);
 }
 
 void backLevelSetup()
@@ -435,6 +442,7 @@ void backLevelSetup()
 
   data[2] = SEG_B | SEG_F;
   data[3] = 0;
+  display.setSegments(data);
 }
 
 void loop()
@@ -480,8 +488,6 @@ void loop()
             hour = t.hr ;
             minute = t.min;
             second = t.sec;
-            hour = t.min % 24; // FIXME
-            minute = t.sec; // FIXME
             // Включаем нужные ленты и фоновый свет
             byte PWM = (power[hour] > 0) ? (power[hour] * 64 - 1) : 0;
             analogWrite(stripPWM, PWM);
@@ -544,13 +550,26 @@ void loop()
             break;
           }
 
-          case 1: // Установка часов
+          case 1: // Выключение света и полива
           {
+            watering = false;
+            checkMoisture = true;
+            digitalWrite(shiftLatch, LOW);
+            shiftOut(shiftData, shiftClock, LSBFIRST, 0);
+            digitalWrite(shiftLatch, HIGH);
+            noTone(buzzer);
+            state = 2; // Переходим непосредственно к настройкам
+            break;
+          }
+
+          case 2: // Установка часов
+          {
+            analogWrite(stripPWM, showColon ? 0 : 255); // Индикатор света мигает при настройке
             newVal = map(analogRead(res), 0, 1023, 0, 23);
             hourSetup();
 
             if (setNewVal)
-              {
+              { 
                 setNewVal = false;
                 hour = newVal;
               }
@@ -558,8 +577,9 @@ void loop()
             break;
           }
 
-          case 2: // Установка минут
+          case 3: // Установка минут
           {
+            analogWrite(stripPWM, showColon ? 0 : 255); // Индикатор света мигает при настройке
             newVal = map(analogRead(res), 0, 1023, 0, 59);
             minuteSetup();
 
@@ -577,8 +597,9 @@ void loop()
             break;
           }
 
-          case 3: // Установка начала освещения
+          case 4: // Установка начала освещения
           {
+            analogWrite(stripPWM, showColon ? 0 : 255); // Индикатор света мигает при настройке
             newVal = map(analogRead(res), 0, 1023, 0, 18);
             beginHourSetup();
 
@@ -591,8 +612,9 @@ void loop()
             break;
           }
 
-          case 4: // Установка длительности освещения
+          case 5: // Установка длительности освещения
           {
+            analogWrite(stripPWM, showColon ? 0 : 255); // Индикатор света мигает при настройке
             newVal = map(analogRead(res), 0, 1023, 6, 24 - beginHour);
             lightTimeSetup();
 
@@ -605,8 +627,9 @@ void loop()
             break;
           }
 
-          case 5: // Установка влажности полива
+          case 6: // Установка влажности полива
           {
+            analogWrite(stripPWM, showColon ? 0 : 255); // Индикатор света мигает при настройке
             newVal = map(analogRead(res), 0, 1023, 0, 99);
             minMoistureSetup();
 
@@ -619,8 +642,9 @@ void loop()
             break;
           }
 
-          case 6: // Установка времени полива
+          case 7: // Установка времени полива
           {
+            analogWrite(stripPWM, showColon ? 0 : 255); // Индикатор света мигает при настройке
             newVal = map(analogRead(res), 0, 1023, 1, 99);
             waterTimeSetup();
 
@@ -633,8 +657,9 @@ void loop()
             break;
           }
 
-          case 7: // Установка включения фонового света
+          case 8: // Установка включения фонового света
           {
+            analogWrite(stripPWM, showColon ? 0 : 255); // Индикатор света мигает при настройке
             newVal = map(analogRead(res), 0, 1023, 1, 5);
             backLevelSetup();
 
@@ -647,7 +672,7 @@ void loop()
             break;
           }
 
-          case 8: // Сохранение настроек в EEPROM
+          case 9: // Сохранение настроек в EEPROM
           {
             EEPROM.update(0, 0xda);
             EEPROM.update(1, beginHour);
