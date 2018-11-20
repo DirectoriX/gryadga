@@ -318,6 +318,42 @@ void lightTimeSetup()
   data[3] = SEG_D | SEG_E | SEG_F;
 }
 
+void minMoistureSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(minMoisture / 10);
+      data[1] = display.encodeDigit(minMoisture % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = SEG_C | SEG_D | SEG_E | SEG_G;
+  data[3] = SEG_A | SEG_C | SEG_D | SEG_F | SEG_G;
+}
+
+void waterTimeSetup()
+{
+  if (showColon)
+    {
+      data[0] = display.encodeDigit(waterTime / 10);
+      data[1] = display.encodeDigit(waterTime % 10);
+      data[1] |= 0x80; // Двоеточие = текущее значение
+    }
+  else
+    {
+      data[0] = display.encodeDigit(newVal / 10);
+      data[1] = display.encodeDigit(newVal % 10);
+    }
+
+  data[2] = SEG_C | SEG_D | SEG_E | SEG_G;
+  data[3] = SEG_D | SEG_E | SEG_F;
+}
+
 void loop()
 {
   if (needUpdate) // Если надо обновить
@@ -488,11 +524,29 @@ void loop()
 
           case 5: // Установка влажности полива
           {
+            newVal = map(analogRead(res), 0, 1023, 0, 99);
+            minMoistureSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                minMoisture = newVal;
+              }
+
             break;
           }
 
           case 6: // Установка времени полива
           {
+            newVal = map(analogRead(res), 0, 1023, 1, 99);
+            waterTimeSetup();
+
+            if (setNewVal)
+              {
+                setNewVal = false;
+                waterTime = newVal;
+              }
+
             break;
           }
 
