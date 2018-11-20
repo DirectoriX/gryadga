@@ -68,18 +68,18 @@ const byte strip[][5] = {0b00010000, 0b00001000, 0b00000100, 0b00000010, 0b00000
                         };
 
 // Массив с яркостью освещения
-int power[24];
+byte power[24];
 
 // Флаги обновления
 volatile bool needUpdate = true;
 volatile bool nextState = false;
 
 // Блок настроек
-int beginHour = 6; // Час начала освещения
-int lightTime = 15; // Общая длительность освещения
-int backLevel = 3; // Кол-во лент, при котором включён фоновый свет
-int minMoisture = 50; // Влажность, ниже которой включается полив
-int waterTime = 1; // Длительность полива в десятках секунд
+byte beginHour = 6; // Час начала освещения
+byte lightTime = 15; // Общая длительность освещения
+byte backLevel = 3; // Кол-во лент, при котором включён фоновый свет
+byte minMoisture = 50; // Влажность, ниже которой включается полив
+byte waterTime = 1; // Длительность полива в десятках секунд
 
 // Вспомогательные данные
 bool showColon = true;
@@ -129,7 +129,17 @@ void setup()
   pinMode(valve, OUTPUT);
   pinMode(backlight, OUTPUT);
   // Читаем настройки из EEPROM
-  ////////////////////
+  byte first = EEPROM.read(0);
+
+  if (first == 0xda)
+    {
+      beginHour = EEPROM.read(1);
+      lightTime = EEPROM.read(2);
+      backLevel = EEPROM.read(3);
+      minMoisture = EEPROM.read(4);
+      waterTime = EEPROM.read(5);
+    }
+
   // Считаем освещение
   int endHour = beginHour + lightTime;
 
@@ -188,7 +198,7 @@ void readSensor()
         {
           waterCount = waterTime * 10;
           watering = true;
-          moistureCount = waterTime * 10 + 9;
+          moistureCount = waterTime * 10 + 9; // FIXME 900
           checkMoisture = false;
         }
     }
@@ -370,7 +380,13 @@ void loop()
 
           case 8: // Сохранение настроек в EEPROM
           {
-            state=0; // После сохранения настроек переходим в основной режим
+            EEPROM.update(0, 0xda);
+            EEPROM.update(1, beginHour);
+            EEPROM.update(2, lightTime);
+            EEPROM.update(3, backLevel);
+            EEPROM.update(4, minMoisture);
+            EEPROM.update(5, waterTime);
+            state = 0; // После сохранения настроек переходим в основной режим
             break;
           }
         }
