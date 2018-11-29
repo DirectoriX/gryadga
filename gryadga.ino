@@ -56,6 +56,9 @@ const int valve = A0;
 // Фоновый свет
 const int backlight = A1;
 
+// Есть ли насос?
+const int pumpSwitch = A3;
+
 // Аналоговые входы для датчиков
 const int res = A5; // Крутилка
 const int wat = A6; // Уровень воды
@@ -274,8 +277,12 @@ void readSensor()
       if (moisture < minMoisture)
         {
           waterCount = waterTime * 10;
+          moistureCount = waterCount;
+
+          if (digitalRead(pumpSwitch) == HIGH)
+            { moistureCount += 900; }
+
           watering = true;
-          moistureCount = waterTime * 10 + 900;
           checkMoisture = false;
         }
     }
